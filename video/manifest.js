@@ -1,0 +1,1 @@
+window.VIDEOS = ["bezittelijk-n1","bezittelijk-n2","bezittelijk-n3","datum-n1","datum-n2","datum-n3","geslacht-n1","geslacht-n2","geslacht-n3","passe-compose-n1","passe-compose-n2","passe-compose-n3"];
