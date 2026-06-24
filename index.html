@@ -1820,29 +1820,52 @@ function spellingVraag(it){
     a:antw.join("|"), w:"Goed gespeld: "+esc(it.w[0])+" = <b>"+esc(it.w[1])+"</b>.",
     meer:"Let op het lidwoord (le/la/l') en de accenten (é, è, à …)."+ezel };
 }
+/* roterende cyclus (state in S.cyclus[key]): elke toets pakt VERSE items; pas als de hele pool
+   geweest is, opnieuw schudden. Zo is elke oefentoets anders én komt over een paar toetsen ALLES
+   aan bod, zonder herhaling binnen één cyclus. Pool veranderd? → reset (nieuwe content telt mee). */
+function pakUitCyclus(key, ids, n){
+  if(!ids.length || n<=0) return [];
+  if(!S.cyclus) S.cyclus={};
+  const vers=()=>({volgorde:shuffle(ids), pos:0});
+  let c=S.cyclus[key];
+  if(!c || !Array.isArray(c.volgorde) || c.volgorde.length!==ids.length || c.volgorde.some(id=>ids.indexOf(id)<0)) c=vers();
+  const out=[], max=Math.min(n, ids.length); let guard=0;
+  while(out.length<max && guard++ < ids.length*3){
+    if(c.pos>=c.volgorde.length) c=vers();             // cyclus rond → opnieuw schudden
+    const id=c.volgorde[c.pos++];
+    if(out.indexOf(id)<0) out.push(id);                // nooit twee keer dezelfde in één toets
+  }
+  S.cyclus[key]=c; save();
+  return out;
+}
 function startProeftoets(){
-  // 1) grammatica: ~2 per onderwerp (liefst niveau 2+), + eventuele discriminatie-vragen
+  // 1) grammatica: roterend — ELK onderwerp komt in elke toets aan bod en cyclet door z'n vragen
   const grammar=[];
+  const perTopic = BEGRIPVAK ? 2 : 1;
   LEERSTOF.forEach(o=>{
-    const cand=[];
-    o.niveaus.forEach(nv=>{ if(nv.n>=2) (nv.vragen||[]).forEach(q=>{ if(["bouw","velden","mc","hotspot","label","sequence","open","gap","ontleed"].includes(q.t)) cand.push(q); }); });
-    if(!cand.length) o.niveaus.forEach(nv=>(nv.vragen||[]).forEach(q=>{ if(q.t!=="vb") cand.push(q); }));
-    shuffle(cand).slice(0,2).forEach(q=>grammar.push(q));
+    const byId={}, ids=[];
+    o.niveaus.forEach(nv=>{ if(nv.n>=2) (nv.vragen||[]).forEach((q,i)=>{ if(["bouw","velden","mc","hotspot","label","sequence","open","gap","ontleed"].includes(q.t)){ const id=o.id+":"+nv.n+":"+i; byId[id]=q; ids.push(id); } }); });
+    if(!ids.length) o.niveaus.forEach(nv=>(nv.vragen||[]).forEach((q,i)=>{ if(q.t!=="vb"){ const id=o.id+":"+nv.n+":"+i; byId[id]=q; ids.push(id); } }));
+    pakUitCyclus("ot:g:"+o.id, ids, perTopic).forEach(id=>grammar.push(byId[id]));
   });
-  if(window.MIXVRAGEN&&window.MIXVRAGEN.length) window.MIXVRAGEN.forEach(q=>grammar.push(q));
-  // 2) woordjes + spelling (alleen taal-/woordvakken; wiskunde-begripvak houdt grammatica-only)
+  if(window.MIXVRAGEN&&window.MIXVRAGEN.length){
+    const byId={}, ids=window.MIXVRAGEN.map((q,i)=>{ const id="mix:"+i; byId[id]=q; return id; });
+    pakUitCyclus("ot:g:mix", ids, 2).forEach(id=>grammar.push(byId[id]));
+  }
+  // 2) woordjes + spelling: roterend over ALLE woorden → elke toets andere woorden, alles komt langs
   let qWoord=[], qSpel=[];
   if(!BEGRIPVAK){
-    const items=alleWoordItems();
-    if(items.length>=4){
-      qWoord = shuffle(items).slice(0,5).map(woordMcVraag).filter(Boolean);
-      qSpel  = shuffle(items).slice(0,5).map(spellingVraag);
+    const byId={}, ids=[];
+    alleWoordItems().forEach(x=>{ const id="w:"+x.th+":"+x.w[1]; byId[id]=x; ids.push(id); });
+    if(ids.length>=4){
+      const greep=pakUitCyclus("ot:woord", ids, Math.min(10, ids.length)).map(id=>byId[id]);
+      const half=Math.ceil(greep.length/2);
+      qWoord = greep.slice(0,half).map(woordMcVraag).filter(Boolean);   // eerste helft → betekenis
+      qSpel  = greep.slice(half).map(spellingVraag);                    // andere helft → spelling
     }
   }
-  // 3) mengen: bij een talenmix grammatica afkappen op 5 (balans), anders alle grammatica
-  const heeftWoord = qWoord.length||qSpel.length;
-  const qGram = heeftWoord ? shuffle(grammar).slice(0,5) : shuffle(grammar);
-  const vragen = interleave([qWoord, qGram, qSpel]);   // woord → grammatica → spelling → …
+  // 3) mengen + om-en-om afwisselen (woord → grammatica → spelling → …)
+  const vragen = interleave([qWoord, shuffle(grammar), qSpel]);
   if(!vragen.length){ toast("Nog geen vragen voor de oefentoets."); return; }
   ronde={vragen, i:0, goed:0, antwoorden:[], proef:true};
   huidigTopic=null; S.laatste=null; save();
