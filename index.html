@@ -415,6 +415,31 @@ sup{font-size:.72em;line-height:0}
 .ov-nav{display:flex;gap:10px;margin-top:16px}
 .ov-nav .btn{flex:1}
 </style>
+<script>
+/* ---------- Cache-buster (zie tools/oefen-engine/stamp-build.mjs) -------------------
+   GitHub Pages stuurt max-age=600 op alles en die header is daar niet te overrulen, dus
+   een verse deploy blijft tot 10 minuten onzichtbaar zonder harde refresh. We halen
+   version.json op met no-store (gaat gegarandeerd langs de cache); staat er een nieuwere
+   build klaar, dan herladen we één keer onder ?v=<build> — een URL die niet in de cache
+   zit. Offline of bij een fout: niets doen, de app werkt gewoon door. ------------------ */
+(function(){
+  var BUILD = "94c8ed8ed9";          // wordt bij deploy vervangen door de echte build-hash
+  if(BUILD === "dev") return; // lokaal/ongestempeld: niet checken
+  try{
+    var hier = new URL(location.href);
+    if(hier.protocol === "file:") return;                       // offline kopie: niets doen
+    fetch("version.json?t=" + Date.now(), { cache: "no-store" })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(v){
+        if(!v || !v.build || v.build === BUILD) return;          // al bij
+        if(hier.searchParams.get("v") === v.build) return;       // al geprobeerd → geen lus
+        hier.searchParams.set("v", v.build);
+        location.replace(hier.toString());
+      })
+      .catch(function(){});                                      // offline → stil verder
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -675,11 +700,11 @@ sup{font-size:.72em;line-height:0}
 </div>
 <div id="confetti"></div>
 
-<script src="content.js"></script>
-<script src="ezels.js"></script>
-<script src="video/manifest.js"></script>
+<script src="content.js?v=94c8ed8ed9"></script>
+<script src="ezels.js?v=94c8ed8ed9"></script>
+<script src="video/manifest.js?v=94c8ed8ed9"></script>
 <!-- math.js alleen voor wiskunde-vakken (synchroon, geen 404 bij talen) -->
-<script>if(window.VAK&&window.VAK.wiskunde)document.write('<scr'+'ipt src="math.js"><\/scr'+'ipt>');</script>
+<script>if(window.VAK&&window.VAK.wiskunde)document.write('<scr'+'ipt src="math.js?v=94c8ed8ed9"><\/scr'+'ipt>');</script>
 <script>
 /* =====================================================================
    App-engine — adaptief leermodel
@@ -710,6 +735,19 @@ const VAK = Object.assign(
 VAK.spraak   = Object.assign({vraagLang:"nl-NL", antwoordLang:"en-GB"}, VAK.spraak||{});
 VAK.matching = Object.assign({stripInfinitief:true, accentTolerant:false, lidwoordTolerant:false}, VAK.matching||{});
 VAK.tegels   = VAK.tegels || ["leerstof","begrippen","spel","spiekblad"];
+/* Taal-opties (default = Frans/Engels-gedrag; alleen zetten als een vak ze nodig heeft) */
+VAK.lidwoorden = VAK.lidwoorden || null;        // bv. ["der","die","das"] — null = Franse standaardlijst
+VAK.symbolen   = VAK.symbolen   || null;        // bv. ["ß","ä","ö","ü"] — extra toetsen bij typvragen
+VAK.tekenLabel = VAK.tekenLabel || "het accent";// hoe de "bijna goed"-melding het ontbrekende teken noemt
+/* Aanmoedigingen: elk vak mag ze in content.js overschrijven; deze fallback voorkomt dat
+   een nieuw vak crasht op een ontbrekende window.AANMOEDIGING (ReferenceError in feedback()). */
+const AANMOEDIGING = Object.assign({
+  goed:        ["Goed zo, Storm! 🎉", "Top gedaan!", "Yes, helemaal goed!", "Knap, Storm! ⭐"],
+  bijna:       ["Bijna! Kijk even mee.", "Net niet — geeft niks, je leert het zo.", "Oei, bijna goed!"],
+  levelup:     ["Wauw, een niveau hoger! 🚀", "Je gaat lekker, Storm!"],
+  leveldown:   ["Geen stress, we pakken het rustig terug. 💛", "We oefenen dit nog even."],
+  stapelklaar: ["Stapel klaar — top, Storm! 🎉", "Die stapel zit erin!"],
+}, window.AANMOEDIGING || {});
 const STORE = VAK.store || ("storm_"+VAK.id+"_v1");
 const STACK = VAK.stapelGrootte || 6, RONDE = 5;
 const VOICE = VAK.spraak.antwoordLang;
@@ -717,12 +755,15 @@ const DOEL  = VAK.doelLabel || "";
 const WIS   = !!VAK.wiskunde;
 const BEGRIPVAK = WIS || !!VAK.begripVak;   // begrippen-vak (wiskunde/aardrijkskunde): begrippen i.p.v. woorden/grammatica
 const BEGRIP = BEGRIPVAK ? "begrippen" : "woorden";   // labelwoord voor de stapel-leerloop
+// taalvak = vertaalvak (NL → vreemde taal): woordjes + spelling in de oefentoets. Anders (NL→NL,
+// geen doeltaal: bv. Nederlands grammatica) → begrippen-herkenning i.p.v. vertaal/spelling-vragen.
+const TAALVAK = !BEGRIPVAK && !!DOEL && !!VAK.spraak.antwoordLang && !String(VAK.spraak.antwoordLang).toLowerCase().startsWith("nl");
 /* content-globals: canonieke namen met terugval op de oude (Engels/Frans content.js) */
 window.LEERSTOF  = window.LEERSTOF  || window.GRAMMATICA || [];
 window.BEGRIPPEN = window.BEGRIPPEN || window.WOORDEN || {};
 
 /* ---------- state ---------- */
-function leeg(){ return {punten:0, grammatica:{}, woorden:{}, laatste:null}; }
+function leeg(){ return {punten:0, grammatica:{}, woorden:{}, laatste:null, cyclus:{}}; }
 let S = load();
 function load(){ try{ return Object.assign(leeg(), JSON.parse(localStorage.getItem(STORE))||{}); }catch(e){ return leeg(); } }
 function save(){ try{ localStorage.setItem(STORE, JSON.stringify(S)); }catch(e){} }
@@ -742,18 +783,25 @@ function norm(s){ return (s||"").toLowerCase().trim().replace(/^to\s+/,"").repla
 function wisHTML(s){ return (typeof window.WIS_RENDER==="function" ? window.WIS_RENDER(s) : s); }
 /* ---------- Frans-bewuste matching (accent- en lidwoord-tolerant) ---------- */
 function baseNorm(s){ s=(s||"").toLowerCase().trim().replace(/[’]/g,"'").replace(/[.!?;:,]/g,"").replace(/\s+/g," "); if(VAK.matching.stripInfinitief) s=s.replace(/^to\s+/,""); return s; }
-function deburr(s){ return baseNorm(s).normalize("NFD").replace(/[̀-ͯ]/g,""); }
-const LIDW=/^(l'|les |le |la |un |une |des |du |de la |de l'|mon |ma |mes |ton |ta |tes |son |sa |ses |au |aux )/;
+function deburr(s){ return baseNorm(s).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/ß/g,"ss"); } // ß ontleedt niet via NFD → apart
+const LIDW_DEFAULT="l'|les |le |la |un |une |des |du |de la |de l'|mon |ma |mes |ton |ta |tes |son |sa |ses |au |aux ";
+const LIDW=new RegExp("^("+(VAK.lidwoorden&&VAK.lidwoorden.length
+  ? VAK.lidwoorden.map(a=>String(a).toLowerCase().trim()).filter(a=>/^[a-zà-ÿ']+$/.test(a))
+      .map(a=>a.endsWith("'")?a:a+" ").join("|")
+  : LIDW_DEFAULT)+")");
 function zonderLid(s){ return (s||"").replace(LIDW,"").trim(); }
 function lidVan(s){ const m=baseNorm(s).match(LIDW); return m?m[1].trim().replace(/'$/,""):""; }
 function altsVan(w){ return Array.isArray(w[2]) ? w[2] : (Array.isArray(w[3]) ? w[3] : []); }
-function genderVeld(w){ if(w[2]==="m"||w[2]==="v") return w[2]; if(w[3]==="m"||w[3]==="v") return w[3]; return ""; }
+const GESLACHTEN=["m","v","o","mv"];   // o = onzijdig (das), mv = meervoud
+function genderVeld(w){ if(GESLACHTEN.includes(w[2])) return w[2]; if(GESLACHTEN.includes(w[3])) return w[3]; return ""; }
 function genderVan(w){ const gv=genderVeld(w); if(gv) return gv;
   const l=lidVan(w[1]);
-  if(["le","un","mon","ton","son","au","du"].includes(l)) return "m";
-  if(["la","une","ma","ta","sa"].includes(l)) return "v";
+  if(["le","un","mon","ton","son","au","du","der","den","dem"].includes(l)) return "m";
+  if(["la","une","ma","ta","sa","die"].includes(l)) return "v";
+  if(["das"].includes(l)) return "o";
   return ""; }
-function kleurFr(w){ const g=genderVan(w), c=g==="m"?"oklch(0.52 0.15 255)":g==="v"?"oklch(0.58 0.18 350)":"";
+const GESLACHTKLEUR={m:"oklch(0.52 0.15 255)", v:"oklch(0.55 0.19 25)", o:"oklch(0.52 0.14 150)", mv:"oklch(0.52 0.14 300)"};
+function kleurFr(w){ const g=genderVan(w), c=GESLACHTKLEUR[g]||"";
   return c?`<span style="color:${c}">${w[1]}</span>`:w[1]; }
 function checkAntwoord(input, antwoorden){
   const inp=baseNorm(input);
@@ -1008,11 +1056,17 @@ function renderMC(q, area){
     b.dataset.opt=opt; b.onclick=()=>antwoordMC(b,opt,q); wrap.appendChild(b); });
   area.appendChild(wrap);
 }
+/* extra teken-toetsen (VAK.symbolen, bv. ß ä ö ü) onder een gewoon tekstveld */
+function tekenBalk(getInput, onChange){
+  if(!(VAK.symbolen && VAK.symbolen.length)) return null;
+  return maakSymboolbalk(getInput, null, onChange, VAK.symbolen.map(t=>[t,t]));
+}
 function renderGap(q, area){
   const wrap=document.createElement("div"); wrap.className="gapwrap";
   wrap.innerHTML=`<input id="gap-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="typ je antwoord…">
     <button class="btn" style="width:auto;padding:0 18px" onclick="antwoordGap()">Check</button>`;
   area.appendChild(wrap);
+  const tb=tekenBalk(()=>el("gap-in")); if(tb) area.appendChild(tb);
   setTimeout(()=>{ const g=el("gap-in"); if(g){ g.focus(); g.onkeydown=e=>{ if(e.key==="Enter") antwoordGap(); }; } },50);
 }
 
@@ -1030,14 +1084,14 @@ function eqCheck(val, antwoord, vars){
 
 /* --- symbolenbalk: tekens die niet (makkelijk) op het toetsenbord zitten (· ^ ( ) + variabelen).
        getInput() levert het invoerveld waar tekens in moeten; onChange() voor een live-preview. --- */
-function maakSymboolbalk(getInput, vars, onChange){
+function maakSymboolbalk(getInput, vars, onChange, tekens){
   const pad=document.createElement("div"); pad.className="mpad";
   function ins(t){ const inp=getInput(); if(!inp||inp.disabled) return;
     const s=inp.selectionStart!=null?inp.selectionStart:inp.value.length, e=inp.selectionEnd!=null?inp.selectionEnd:inp.value.length;
     inp.value=inp.value.slice(0,s)+t+inp.value.slice(e); const p=s+t.length; inp.focus(); try{inp.setSelectionRange(p,p);}catch(_){}
     if(onChange) onChange(); }
   (vars||[]).forEach(v=>{ const b=document.createElement("button"); b.type="button"; b.className="mkey"; b.textContent=v; b.onclick=()=>ins(v); pad.appendChild(b); });
-  [['·','·'],['^','xⁿ'],['(','('],[')',')']].forEach(([t,lab])=>{ const b=document.createElement("button"); b.type="button"; b.className="mkey"; b.textContent=lab; b.onclick=()=>ins(t); pad.appendChild(b); });
+  (tekens||[['·','·'],['^','xⁿ'],['(','('],[')',')']]).forEach(([t,lab])=>{ const b=document.createElement("button"); b.type="button"; b.className="mkey"; b.textContent=lab; b.onclick=()=>ins(t); pad.appendChild(b); });
   const bs=document.createElement("button"); bs.type="button"; bs.className="mkey wide"; bs.textContent="⌫";
   bs.onclick=()=>{ const inp=getInput(); if(!inp||inp.disabled) return; inp.value=inp.value.slice(0,-1); inp.focus(); if(onChange) onChange(); }; pad.appendChild(bs);
   return pad;
@@ -1601,10 +1655,11 @@ function checkWoord(){
                               : "✓ "+kies(AANMOEDIGING.goed)+" <b>"+w[1]+"</b>");
     S.punten++; el("punten").textContent=S.punten;
   } else if(r.status==="accent"){
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna goed! Let op het accent: <b>"+w[1]+"</b> "+spk+ezelHTML(w[1]);
+    fb.className="fb show ok"; fb.innerHTML="📝 Bijna goed! Let op "+VAK.tekenLabel+": <b>"+w[1]+"</b> "+spk+ezelHTML(w[1]);
     wq.items.push(wq.items.shift()); // accent telt pas als goed mét accent — geen straf, komt nog een keer
   } else if(r.status==="lid"){
-    const g=genderVan(w), gtxt=g==="m"?" (mannelijk)":g==="v"?" (vrouwelijk)":"";
+    const GTXT={m:" (mannelijk)", v:" (vrouwelijk)", o:" (onzijdig)", mv:" (meervoud)"};
+    const g=genderVan(w), gtxt=GTXT[g]||"";
     fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op het lidwoord: het is <b>"+w[1]+"</b>"+gtxt+" "+spk+ezelHTML(w[1]);
     wq.items.push(wq.items.shift()); // lidwoord/geslacht telt pas als goed mét juist lidwoord
   } else if(r.status==="spelling"){
@@ -1810,6 +1865,24 @@ function woordMcVraag(it){
     w:esc(it.w[0])+" = <b>"+esc(goed)+"</b>.",
     meer:"Onthoud: "+esc(it.w[0])+" → "+esc(goed)+"."+ezel };
 }
+/* begrippen-herkenning (concept-/begripvakken, bv. Nederlands vaktermen): omschrijving → kies het
+   juiste begrip. Item-conventie net als overal: w[0]=omschrijving/prompt, w[1]=het begrip (antwoord).
+   Géén spelling-typen (een definitie laat je niet exact intypen). */
+function begripMcVraag(it){
+  const term=it.w[1], oms=it.w[0];
+  const zelfde=shuffle((BEGRIPPEN[it.th].items||[]).filter(w=>w[1]!==term)).map(w=>w[1]);
+  const ander =shuffle(alleWoordItems().filter(x=>x.th!==it.th && x.w[1]!==term)).map(x=>x.w[1]);
+  const afl=[], gezien=new Set([term]);
+  for(const w of zelfde.concat(ander)){ if(gezien.has(w))continue; gezien.add(w); afl.push(w); if(afl.length>=3)break; }
+  if(afl.length<2) return null;
+  const term2oms={}; alleWoordItems().forEach(x=>{ if(!term2oms[x.w[1]]) term2oms[x.w[1]]=x.w[0]; });
+  const fout={}; afl.forEach(a=>{ if(term2oms[a]) fout[a]="<b>"+esc(a)+"</b> is iets anders: "+esc(term2oms[a])+"."; });
+  return { t:"mc", _cat:"begrip",
+    q:"Welk begrip hoort hierbij?<br><span style=\"font-weight:600;color:var(--ink)\">"+esc(oms)+"</span>",
+    o:shuffle([term,...afl]), a:term, fout:fout,
+    w:"<b>"+esc(term)+"</b> = "+esc(oms)+".",
+    meer:"Onthoud dit begrip: <b>"+esc(term)+"</b>." };
+}
 /* spelling-vraag: NL → typ het woord EXACT (accenten + lidwoord tellen mee).
    Bij goed: bevestiging dat de spelling klopt + ezelsbruggetje. Bij fout: juiste vorm + spellingtip. */
 function spellingVraag(it){
@@ -1840,8 +1913,9 @@ function pakUitCyclus(key, ids, n){
 }
 function startProeftoets(){
   // 1) grammatica: roterend — ELK onderwerp komt in elke toets aan bod en cyclet door z'n vragen
+  //    taalvak (weinig grammatica, veel woorden) → 1/onderwerp; grammatica-/begripvak → 2/onderwerp
   const grammar=[];
-  const perTopic = BEGRIPVAK ? 2 : 1;
+  const perTopic = TAALVAK ? 1 : 2;
   LEERSTOF.forEach(o=>{
     const byId={}, ids=[];
     o.niveaus.forEach(nv=>{ if(nv.n>=2) (nv.vragen||[]).forEach((q,i)=>{ if(["bouw","velden","mc","hotspot","label","sequence","open","gap","ontleed"].includes(q.t)){ const id=o.id+":"+nv.n+":"+i; byId[id]=q; ids.push(id); } }); });
@@ -1852,17 +1926,19 @@ function startProeftoets(){
     const byId={}, ids=window.MIXVRAGEN.map((q,i)=>{ const id="mix:"+i; byId[id]=q; return id; });
     pakUitCyclus("ot:g:mix", ids, 2).forEach(id=>grammar.push(byId[id]));
   }
-  // 2) woordjes + spelling: roterend over ALLE woorden → elke toets andere woorden, alles komt langs
+  // 2) woord-/begrippen-kolom (+ spelling alleen bij taalvak): roterend → elke toets anders, alles komt langs
   let qWoord=[], qSpel=[];
-  if(!BEGRIPVAK){
-    const byId={}, ids=[];
-    alleWoordItems().forEach(x=>{ const id="w:"+x.th+":"+x.w[1]; byId[id]=x; ids.push(id); });
-    if(ids.length>=4){
-      const greep=pakUitCyclus("ot:woord", ids, Math.min(10, ids.length)).map(id=>byId[id]);
-      const half=Math.ceil(greep.length/2);
-      qWoord = greep.slice(0,half).map(woordMcVraag).filter(Boolean);   // eerste helft → betekenis
-      qSpel  = greep.slice(half).map(spellingVraag);                    // andere helft → spelling
-    }
+  const byId={}, ids=[];
+  alleWoordItems().forEach(x=>{ const id="w:"+x.th+":"+x.w[1]; byId[id]=x; ids.push(id); });
+  if(TAALVAK && ids.length>=4){
+    // vertaalvak: woordjes (betekenis) + spelling (exact) uit de woordenlijst
+    const greep=pakUitCyclus("ot:woord", ids, Math.min(10, ids.length)).map(id=>byId[id]);
+    const half=Math.ceil(greep.length/2);
+    qWoord = greep.slice(0,half).map(woordMcVraag).filter(Boolean);   // eerste helft → betekenis
+    qSpel  = greep.slice(half).map(spellingVraag);                    // andere helft → spelling
+  } else if(!TAALVAK && ids.length>=4){
+    // concept-/begripvak (bv. Nederlands vaktermen): begrippen-herkenning, geen spelling
+    qWoord = pakUitCyclus("ot:begrip", ids, Math.min(6, ids.length)).map(id=>begripMcVraag(byId[id])).filter(Boolean);
   }
   // 3) mengen + om-en-om afwisselen (woord → grammatica → spelling → …)
   const vragen = interleave([qWoord, shuffle(grammar), qSpel]);
@@ -1927,6 +2003,7 @@ function initVak(){
   setText("st-woorden-label", BEGRIPVAK?"Begrippen geleerd:":"Woorden geleerd:");
   setText("l-tag-back",   BEGRIPVAK?"Begrip":(DOEL||"Antwoord"));
   const inp=el("wt-input"); if(inp) inp.placeholder = BEGRIPVAK?"typ het begrip…":("typ het "+DOEL+"e woord…");
+  const wtb=tekenBalk(()=>el("wt-input")); if(wtb && el("wt-gap")) el("wt-gap").insertAdjacentElement("afterend", wtb);
   if(BEGRIPVAK){ const bs=el("begrippen-sub"); if(bs) bs.textContent="Begrippen leren: eerst kijken, dan zelf typen."; }
   // 3e tegel: spel (talen) of proeftoets (wiskunde)
   const key = VAK.tegels.includes("proeftoets") ? "proeftoets" : (VAK.tegels.includes("spel")?"spel":null);
