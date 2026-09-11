@@ -230,6 +230,7 @@ h1,h2,h3,.fred{font-family:"Fredoka","Nunito",sans-serif;letter-spacing:-.01em;l
 .fc-ezel{margin-top:14px;max-width:90%;font-size:.92rem;line-height:1.4;color:var(--brand-ink);font-weight:600}
 .fc-ezel:empty{display:none}
 .fc-nav{display:flex;gap:10px;margin-top:14px}
+#l-typ{margin-top:14px}
 
 /* ===== Spel (match) ===== */
 .match{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
@@ -423,7 +424,7 @@ sup{font-size:.72em;line-height:0}
    build klaar, dan herladen we één keer onder ?v=<build> — een URL die niet in de cache
    zit. Offline of bij een fout: niets doen, de app werkt gewoon door. ------------------ */
 (function(){
-  var BUILD = "94c8ed8ed9";          // wordt bij deploy vervangen door de echte build-hash
+  var BUILD = "c0896049f6";          // wordt bij deploy vervangen door de echte build-hash
   if(BUILD === "dev") return; // lokaal/ongestempeld: niet checken
   try{
     var hier = new URL(location.href);
@@ -619,31 +620,40 @@ sup{font-size:.72em;line-height:0}
         <div class="bubble"><h2 id="sp-stapel">Stapel 1</h2><p id="sp-sub">8 woorden</p></div>
       </div>
       <div class="btn-row">
-        <button class="btn ghost" onclick="startLeren()">👀 Eerst kijken</button>
+        <button class="btn ghost" id="sp-kijk-btn" onclick="startLeren()">👀 Eerst kijken</button>
         <button class="btn" onclick="startWoordToets()">✍️ Overhoren</button>
       </div>
     </div>
     <div id="stapel-woorden" style="margin-top:12px"></div>
   </section>
 
-  <!-- ============ LEREN (flashcards) ============ -->
+  <!-- ============ LEREN (flashcards; bij taalvakken typ je het antwoord) ============ -->
   <section id="screen-leren" class="screen">
     <div class="shead"><button class="back" onclick="show('stapel')">←</button><h2 id="l-titel">Kijken</h2></div>
-    <div class="fc-count"><span id="l-pos">1</span> / <span id="l-tot">8</span> · tik of druk op <b>Enter</b> om te draaien — Enter = volgende</div>
+    <div class="fc-count"><span id="l-pos">1</span> / <span id="l-tot">8</span> <span id="l-uitleg">· tik of druk op <b>Enter</b> om te draaien — Enter = volgende</span></div>
     <div class="flip" id="flip" onclick="draai()">
       <div class="flip-in">
-        <div class="face front"><div class="tag">Nederlands</div><div class="w" id="l-nl"></div><div class="hint">raad eerst zelf, draai dan om 👆</div></div>
+        <div class="face front"><div class="tag">Nederlands</div><div class="w" id="l-nl"></div><div class="hint" id="l-hint-front">raad eerst zelf, draai dan om 👆</div></div>
         <div class="face back"><div class="tag" id="l-tag-back">Frans</div><div class="w" id="l-en"></div>
           <button class="spk" onclick="event.stopPropagation();zegEN(document.getElementById('l-en').textContent)">🔊</button>
           <div class="fc-ezel" id="l-ezel"></div>
-          <div class="hint">tik om terug te draaien</div></div>
+          <div class="hint" id="l-hint-back">tik om terug te draaien</div></div>
       </div>
     </div>
-    <div class="fc-nav">
+    <div id="l-typ" style="display:none">
+      <div class="gapwrap" id="l-gap">
+        <input id="l-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="typ je antwoord…" />
+        <button class="btn" style="width:auto;padding:0 18px" onclick="checkKaart()">Check</button>
+      </div>
+      <div class="fb" id="l-fb"></div>
+      <button class="btn" id="l-next" style="margin-top:14px;display:none" onclick="fcVolgende()">Volgende →</button>
+      <div class="skip" id="l-weetniet-rij"><button class="linkbtn" onclick="fcWeetNiet()">Weet ik niet — laat maar zien</button></div>
+    </div>
+    <div class="fc-nav" id="l-nav">
       <button class="btn ghost" onclick="fcVorige()">← Vorige</button>
       <button class="btn" onclick="fcVolgende()">Volgende →</button>
     </div>
-    <div style="text-align:center;margin-top:10px"><button class="linkbtn" onclick="startWoordToets()">Ik ben klaar met kijken → overhoren</button></div>
+    <div style="text-align:center;margin-top:10px"><button class="linkbtn" id="l-naar-toets" onclick="startWoordToets()">Ik ben klaar met kijken → overhoren</button></div>
   </section>
 
   <!-- ============ WOORD-TOETS (typen) ============ -->
@@ -700,11 +710,11 @@ sup{font-size:.72em;line-height:0}
 </div>
 <div id="confetti"></div>
 
-<script src="content.js?v=94c8ed8ed9"></script>
-<script src="ezels.js?v=94c8ed8ed9"></script>
-<script src="video/manifest.js?v=94c8ed8ed9"></script>
+<script src="content.js?v=c0896049f6"></script>
+<script src="ezels.js?v=c0896049f6"></script>
+<script src="video/manifest.js?v=c0896049f6"></script>
 <!-- math.js alleen voor wiskunde-vakken (synchroon, geen 404 bij talen) -->
-<script>if(window.VAK&&window.VAK.wiskunde)document.write('<scr'+'ipt src="math.js?v=94c8ed8ed9"><\/scr'+'ipt>');</script>
+<script>if(window.VAK&&window.VAK.wiskunde)document.write('<scr'+'ipt src="math.js?v=c0896049f6"><\/scr'+'ipt>');</script>
 <script>
 /* =====================================================================
    App-engine — adaptief leermodel
@@ -738,6 +748,14 @@ VAK.tegels   = VAK.tegels || ["leerstof","begrippen","spel","spiekblad"];
 /* Taal-opties (default = Frans/Engels-gedrag; alleen zetten als een vak ze nodig heeft) */
 VAK.lidwoorden = VAK.lidwoorden || null;        // bv. ["der","die","das"] — null = Franse standaardlijst
 VAK.symbolen   = VAK.symbolen   || null;        // bv. ["ß","ä","ö","ü"] — extra toetsen bij typvragen
+/* Niets opgegeven? Leid de tekenbalk af uit de doeltaal. Zonder die toetsen kan Storm een é of ß
+   niet eens intypen — dan blijft een woord eeuwig "bijna goed" en komt het eindeloos terug. */
+if(VAK.symbolen===null){
+  const _tl=String((VAK.spraak&&VAK.spraak.antwoordLang)||"").toLowerCase();
+  if(_tl.startsWith("fr"))      VAK.symbolen=["é","è","ê","à","ç","ô","û","î"];
+  else if(_tl.startsWith("de")) VAK.symbolen=["ä","ö","ü","ß"];
+  else if(_tl.startsWith("es")) VAK.symbolen=["á","é","í","ó","ú","ñ"];
+}
 VAK.tekenLabel = VAK.tekenLabel || "het accent";// hoe de "bijna goed"-melding het ontbrekende teken noemt
 /* Aanmoedigingen: elk vak mag ze in content.js overschrijven; deze fallback voorkomt dat
    een nieuw vak crasht op een ontbrekende window.AANMOEDIGING (ReferenceError in feedback()). */
@@ -1470,8 +1488,11 @@ function antwoordGap(){
   const q=ronde.vragen[ronde.i]; const inp=el("gap-in"); if(!inp) return;
   const val=inp.value;
   const r=checkAntwoord(val, q.a.split("|"));
-  // spelling-vragen (q.exact): accenten én lidwoord moeten kloppen. Anders: ontbrekend accent laat een grammatica-antwoord niet zakken.
-  const ok = q.exact ? (r.status==="goed") : (r.status==="goed" || r.status==="accent");
+  // spelling-vragen (q.exact): accenten én lidwoord moeten kloppen. Woordjes (q.soepel): lidwoord mag
+  // ook missen — dáár gaat het om de betekenis. Anders: ontbrekend accent laat een antwoord niet zakken.
+  const ok = q.exact  ? (r.status==="goed")
+           : q.soepel ? (r.status==="goed" || r.status==="accent" || r.status==="lid")
+           :            (r.status==="goed" || r.status==="accent");
   inp.disabled=true;
   ronde.antwoorden[ronde.i]=ok; if(ok){ ronde.goed++; el("q-goed").textContent=ronde.goed+" goed"; }
   feedback(ok,q,ok?null:q.a.split("|")[0], val);
@@ -1564,24 +1585,98 @@ function renderStapel(){
     box.appendChild(d); });
 }
 
-/* ---------- LEREN (flashcards) ---------- */
-let fcKaarten=[], fcI=0;
+/* ---------- LEREN (flashcards) ----------
+   Taalvakken (FCTYP): Storm typt het antwoord i.p.v. alleen te draaien. Typen → Enter → de kaart
+   draait om en zegt of het klopte. Alles wat niet meteen "goed" is (ook accent/lidwoord/spelling en
+   "weet ik niet") komt aan het eind van de ronde nog een keer terug (fcFout → herhaalronde).
+   Dit is de kijk-ronde: het raakt boxjes/sterren NIET — dat blijft "Overhoren".
+   Begripvakken (biologie, aardrijkskunde, wiskunde, Nederlands) houden het oude kijk-gedrag. */
+const FCTYP = TAALVAK, FC_MAX_HERHAAL = 3;   // na 3 herhaalrondes stopt de stapel — niet eindeloos doorgaan
+let fcKaarten=[], fcI=0, fcFout=[], fcBeantwoord=false, fcRonde=1;
 function startLeren(){
   const cur=stacks(huidigThema)[huidigStapel];
-  fcKaarten=shuffle(cur); fcI=0;
-  el("l-titel").textContent=BEGRIPPEN[huidigThema].titel+" — kijken";
-  el("l-tot").textContent=fcKaarten.length;
+  fcKaarten=shuffle(cur); fcI=0; fcFout=[]; fcRonde=1;
+  el("l-titel").textContent=BEGRIPPEN[huidigThema].titel+(FCTYP?" — kaartjes":" — kijken");
+  el("l-typ").style.display=FCTYP?"block":"none";
+  el("l-nav").style.display=FCTYP?"none":"flex";
+  el("l-uitleg").innerHTML=FCTYP?"· typ je antwoord en druk op <b>Enter</b>"
+                                :"· tik of druk op <b>Enter</b> om te draaien — Enter = volgende";
+  el("flip").style.cursor=FCTYP?"default":"pointer";
   show("leren"); toonKaart();
 }
 function toonKaart(){
   const k=fcKaarten[fcI];
   el("flip").classList.remove("on");
   el("l-nl").textContent=k[0]; el("l-en").innerHTML=kleurFr(k);
-  el("l-pos").textContent=fcI+1;
+  el("l-pos").textContent=fcI+1; el("l-tot").textContent=fcKaarten.length;
   el("l-ezel").innerHTML=(window.EZELS&&window.EZELS[k[1]])?("💡 "+window.EZELS[k[1]]):"";
+  if(!FCTYP){ el("l-hint-back").textContent="tik om terug te draaien"; return; }
+  fcBeantwoord=false;
+  el("l-hint-front").textContent="typ het "+(DOEL?DOEL+"e ":"")+"woord 👇";
+  el("l-hint-back").textContent="";
+  el("l-fb").className="fb"; el("l-fb").innerHTML="";
+  el("l-next").style.display="none"; el("l-weetniet-rij").style.display="block";
+  const inp=el("l-input"); inp.value=""; inp.disabled=false;
+  inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); fcBeantwoord?fcVolgende():checkKaart(); } };
+  setTimeout(()=>inp.focus(),60);
 }
-function draai(){ const f=el("flip"); f.classList.toggle("on"); if(f.classList.contains("on")) zegEN(fcKaarten[fcI][1]); }
-function fcVolgende(){ fcI=(fcI+1)%fcKaarten.length; toonKaart(); }
+function draai(){ if(FCTYP && !fcBeantwoord) return;   // typ-modus: geen gratis blik op het antwoord
+  const f=el("flip"); f.classList.toggle("on"); if(f.classList.contains("on")) zegEN(fcKaarten[fcI][1]); }
+function fcOnthou(){ if(fcRonde>FC_MAX_HERHAAL) return;   // vangnet: niet eindeloos blijven herhalen
+  const k=fcKaarten[fcI]; if(!fcFout.some(x=>x[1]===k[1])) fcFout.push(k); }  // terug in de herhaalronde
+function fcOnthul(){          // kaart open, antwoord uitspreken, door-knop tonen
+  fcBeantwoord=true;
+  el("flip").classList.add("on"); zegEN(fcKaarten[fcI][1]);
+  el("l-input").disabled=true; el("l-weetniet-rij").style.display="none";
+  el("l-next").style.display="flex";
+  el("l-next").textContent = (fcI>=fcKaarten.length-1 && !fcFout.length) ? "Klaar! →" : "Volgende →";
+  // feedback + door-knop staan onder het kaartje: rol ze zo nodig net in beeld
+  setTimeout(()=>{ try{ el("l-next").scrollIntoView({block:"nearest", behavior:"smooth"}); }catch(_){ } },120);
+}
+function checkKaart(){
+  if(!FCTYP || fcBeantwoord) return;
+  const k=fcKaarten[fcI], inp=el("l-input"); if(inp.disabled) return;
+  const r=checkAntwoord(inp.value, [k[1]].concat(altsVan(k))), fb=el("l-fb"), jij=esc(inp.value.trim());
+  const juist="<b>"+esc(k[1])+"</b>";
+  if(r.status==="goed"){
+    el("l-hint-back").textContent="✓ goed getypt!";
+    fb.className="fb show ok"; fb.innerHTML="✓ "+kies(AANMOEDIGING.goed);
+  } else if(r.status==="accent"){
+    el("l-hint-back").textContent="📝 bijna";
+    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op "+VAK.tekenLabel+": het is "+juist+". Die komt zo nog een keer terug.";
+    fcOnthou();
+  } else if(r.status==="lid"){
+    const GTXT={m:" (mannelijk)", v:" (vrouwelijk)", o:" (onzijdig)", mv:" (meervoud)"};
+    el("l-hint-back").textContent="📝 bijna";
+    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op het lidwoord: het is "+juist+(GTXT[genderVan(k)]||"")+". Die komt zo nog een keer terug.";
+    fcOnthou();
+  } else if(r.status==="spelling"){
+    el("l-hint-back").textContent="📝 bijna";
+    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op de spelling: het is "+juist+". Die komt zo nog een keer terug.";
+    fcOnthou();
+  } else {
+    el("l-hint-back").textContent="✗ net niet";
+    fb.className="fb show no"; fb.innerHTML=(jij?"Jij typte <b>"+jij+"</b>. ":"")+"Het is "+juist+" — die komt zo nog een keer terug. 💛";
+    fcOnthou();
+  }
+  fcOnthul();
+}
+function fcWeetNiet(){
+  if(!FCTYP || fcBeantwoord) return;
+  el("l-hint-back").textContent="👀 kijk goed";
+  el("l-fb").className="fb show ok";
+  el("l-fb").innerHTML="Geen punt — het is <b>"+esc(fcKaarten[fcI][1])+"</b>. Die komt zo nog een keer terug. 💛";
+  fcOnthou(); fcOnthul();
+}
+function fcVolgende(){
+  if(fcI < fcKaarten.length-1){ fcI++; toonKaart(); return; }
+  if(FCTYP && fcFout.length){                      // ronde uit, maar er staan nog kaartjes open
+    fcKaarten=shuffle(fcFout); fcFout=[]; fcI=0; fcRonde++;
+    toast("Nog even deze "+fcKaarten.length+" 👇"); toonKaart(); return;
+  }
+  if(FCTYP){ toast(kies(AANMOEDIGING.stapelklaar)+" Alle kaartjes gehad!"); confetti(); }  // wel confetti, geen sterren: dit is de oefenronde
+  fcI=0; toonKaart();
+}
 function fcVorige(){ fcI=(fcI-1+fcKaarten.length)%fcKaarten.length; toonKaart(); }
 
 /* ---------- WOORD-TOETS (NL→EN typen) ---------- */
@@ -1611,7 +1706,9 @@ function ezelHTML(en){ const e=window.EZELS&&window.EZELS[en]; return e?`<div cl
 function volgendeWoord(){
   if(wq.items.length===0){ woordKlaar(); return; }
   const it=wq.items[0];
-  if(it.fase===undefined) it.fase = (wq.modus==="stapel") ? "kies" : "typ"; // nieuw woord: eerst herkennen
+  // Taalvak: Storm typt áltijd zelf (haar eigen wens). Begripvak: nieuw begrip krijgt nog wel de
+  // receptieve meerkeuze-opstap — een hele definitie herkennen is daar eerlijker dan intypen.
+  if(it.fase===undefined) it.fase = (wq.modus==="stapel" && !TAALVAK) ? "kies" : "typ";
   toonWoord();
 }
 function toonWoord(){
@@ -1821,8 +1918,14 @@ function resetAlles(){
 document.addEventListener("keydown", e=>{
   // Video-modal: Escape sluit
   if(el("video-modal").classList.contains("on")){ if(e.key==="Escape") closeVideo(); return; }
-  // Flashcards: Enter/spatie = draaien, daarna Enter = volgende kaart; pijltjes = navigeren
+  // Flashcards, typ-modus: het invoerveld doet Enter zelf; ná het nakijken is het veld disabled en
+  // brengt Enter je naar de volgende kaart. Kijk-modus (begripvakken): Enter/spatie draait, pijltjes navigeren.
   if(el("screen-leren").classList.contains("on")){
+    if(FCTYP){
+      if(/^(INPUT|TEXTAREA)$/.test(e.target && e.target.tagName)) return;
+      if(e.key==="Enter"){ e.preventDefault(); if(fcBeantwoord) fcVolgende(); else el("l-input").focus(); }
+      return;
+    }
     if(e.key==="Enter"||e.key===" "){ e.preventDefault(); el("flip").classList.contains("on")?fcVolgende():draai(); }
     else if(e.key==="ArrowRight") fcVolgende();
     else if(e.key==="ArrowLeft") fcVorige();
@@ -1847,23 +1950,15 @@ function interleave(lijsten){
   return out;
 }
 function alleWoordItems(){ const out=[]; for(const th in BEGRIPPEN){ (BEGRIPPEN[th].items||[]).forEach(w=>out.push({w,th})); } return out; }
-/* woordjes-vraag: NL → kies het juiste woord in de doeltaal (receptief).
-   Afleiders liefst uit hetzelfde thema (zelfde soort woord) → eerlijker dan een lange zin als afleider.
-   Bij goed: bevestiging + ezelsbruggetje. Bij fout: per afleider wat je gekozen woord betekent. */
-function woordMcVraag(it){
-  const goed=it.w[1];
-  const zelfde=shuffle((BEGRIPPEN[it.th].items||[]).filter(w=>w[1]!==goed)).map(w=>w[1]);
-  const ander =shuffle(alleWoordItems().filter(x=>x.th!==it.th && x.w[1]!==goed)).map(x=>x.w[1]);
-  const afl=[], gezien=new Set([goed]);
-  for(const w of zelfde.concat(ander)){ if(gezien.has(w))continue; gezien.add(w); afl.push(w); if(afl.length>=3)break; }
-  if(afl.length<2) return null;
-  const fr2nl={}; alleWoordItems().forEach(x=>{ if(!fr2nl[x.w[1]]) fr2nl[x.w[1]]=x.w[0]; });
-  const fout={}; afl.forEach(a=>{ if(fr2nl[a]) fout[a]="dat is <b>"+esc(fr2nl[a])+"</b> in het Nederlands, niet '"+esc(it.w[0])+"'."; });
-  const ezel=(window.EZELS&&window.EZELS[goed])?(" Ezelsbruggetje: "+window.EZELS[goed]):"";
-  return { t:"mc", _cat:"woord", q:"Wat is <b>"+esc(it.w[0])+"</b> in het "+(DOEL||"")+"?",
-    o:shuffle([goed,...afl]), a:goed, fout:fout,
-    w:esc(it.w[0])+" = <b>"+esc(goed)+"</b>.",
-    meer:"Onthoud: "+esc(it.w[0])+" → "+esc(goed)+"."+ezel };
+/* woordjes-vraag: NL → TYP het woord in de doeltaal (productief, maar soepel: een ontbrekend
+   accent of lidwoord telt hier nog goed — de spelling-vragen hieronder zijn wél streng). */
+function woordTypVraag(it){
+  const antw=[it.w[1]].concat(altsVan(it.w));
+  const ezel=(window.EZELS&&window.EZELS[it.w[1]])?(" Ezelsbruggetje: "+window.EZELS[it.w[1]]):"";
+  return { t:"gap", _cat:"woord", soepel:true,
+    q:"Wat is <b>"+esc(it.w[0])+"</b> in het "+(DOEL||"")+"?",
+    a:antw.join("|"), w:esc(it.w[0])+" = <b>"+esc(it.w[1])+"</b>.",
+    meer:"Onthoud: "+esc(it.w[0])+" → "+esc(it.w[1])+"."+ezel };
 }
 /* begrippen-herkenning (concept-/begripvakken, bv. Nederlands vaktermen): omschrijving → kies het
    juiste begrip. Item-conventie net als overal: w[0]=omschrijving/prompt, w[1]=het begrip (antwoord).
@@ -1888,10 +1983,11 @@ function begripMcVraag(it){
 function spellingVraag(it){
   const antw=[it.w[1]].concat(altsVan(it.w));
   const ezel=(window.EZELS&&window.EZELS[it.w[1]])?(" Ezelsbruggetje: "+window.EZELS[it.w[1]]):"";
+  const lid=lidVan(it.w[1]);   // heeft dít woord een lidwoord? dan telt dat mee, anders niet noemen
   return { t:"gap", _cat:"spelling", exact:true,
-    q:"Schrijf het "+(DOEL||"")+"e woord voor <b>"+esc(it.w[0])+"</b> — let op accenten en lidwoord:",
+    q:"Schrijf het "+(DOEL||"")+"e woord voor <b>"+esc(it.w[0])+"</b> — precies goed, met "+VAK.tekenLabel+(lid?" én het lidwoord":"")+":",
     a:antw.join("|"), w:"Goed gespeld: "+esc(it.w[0])+" = <b>"+esc(it.w[1])+"</b>.",
-    meer:"Let op het lidwoord (le/la/l') en de accenten (é, è, à …)."+ezel };
+    meer:"Let op "+VAK.tekenLabel+(lid?" en het lidwoord ("+esc(lid)+")":"")+"."+ezel };
 }
 /* roterende cyclus (state in S.cyclus[key]): elke toets pakt VERSE items; pas als de hele pool
    geweest is, opnieuw schudden. Zo is elke oefentoets anders én komt over een paar toetsen ALLES
@@ -1934,7 +2030,7 @@ function startProeftoets(){
     // vertaalvak: woordjes (betekenis) + spelling (exact) uit de woordenlijst
     const greep=pakUitCyclus("ot:woord", ids, Math.min(10, ids.length)).map(id=>byId[id]);
     const half=Math.ceil(greep.length/2);
-    qWoord = greep.slice(0,half).map(woordMcVraag).filter(Boolean);   // eerste helft → betekenis
+    qWoord = greep.slice(0,half).map(woordTypVraag);                  // eerste helft → betekenis (soepel typen)
     qSpel  = greep.slice(half).map(spellingVraag);                    // andere helft → spelling
   } else if(!TAALVAK && ids.length>=4){
     // concept-/begripvak (bv. Nederlands vaktermen): begrippen-herkenning, geen spelling
@@ -2004,6 +2100,12 @@ function initVak(){
   setText("l-tag-back",   BEGRIPVAK?"Begrip":(DOEL||"Antwoord"));
   const inp=el("wt-input"); if(inp) inp.placeholder = BEGRIPVAK?"typ het begrip…":("typ het "+DOEL+"e woord…");
   const wtb=tekenBalk(()=>el("wt-input")); if(wtb && el("wt-gap")) el("wt-gap").insertAdjacentElement("afterend", wtb);
+  const lb=tekenBalk(()=>el("l-input"));   if(lb  && el("l-gap"))  el("l-gap").insertAdjacentElement("afterend", lb);
+  // Taalvak: de kaartjes zijn geen kijk-ronde meer maar een typ-ronde — noem ze ook zo.
+  if(FCTYP){
+    setText("sp-kijk-btn", "✏️ Kaartjes");
+    setText("l-naar-toets", "Verder naar overhoren →");
+  }
   if(BEGRIPVAK){ const bs=el("begrippen-sub"); if(bs) bs.textContent="Begrippen leren: eerst kijken, dan zelf typen."; }
   // 3e tegel: spel (talen) of proeftoets (wiskunde)
   const key = VAK.tegels.includes("proeftoets") ? "proeftoets" : (VAK.tegels.includes("spel")?"spel":null);
