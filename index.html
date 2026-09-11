@@ -224,7 +224,7 @@ h1,h2,h3,.fred{font-family:"Fredoka","Nunito",sans-serif;letter-spacing:-.01em;l
 .face .hint{position:absolute;bottom:14px;font-size:.78rem;color:var(--ink-soft)}
 .front{background:var(--surface);border:2px solid var(--brand)}
 .front .w{font-family:"Fredoka";font-size:1.9rem;color:var(--ink)}
-.back{background:linear-gradient(150deg,#fff,var(--surface-2));border:2px solid var(--plum);transform:rotateY(180deg)}
+.back{background:linear-gradient(150deg,#fff,var(--surface-2));border:2px solid var(--plum);transform:rotateY(180deg);padding-bottom:52px}
 .back .w{font-family:"Fredoka";font-size:1.9rem;color:var(--plum)}
 .back .spk{position:static;margin-top:12px;width:46px;height:46px;font-size:1.2rem}
 .fc-ezel{margin-top:14px;max-width:90%;font-size:.92rem;line-height:1.4;color:var(--brand-ink);font-weight:600}
@@ -424,7 +424,7 @@ sup{font-size:.72em;line-height:0}
    build klaar, dan herladen we één keer onder ?v=<build> — een URL die niet in de cache
    zit. Offline of bij een fout: niets doen, de app werkt gewoon door. ------------------ */
 (function(){
-  var BUILD = "c0896049f6";          // wordt bij deploy vervangen door de echte build-hash
+  var BUILD = "c6332e8b56";          // wordt bij deploy vervangen door de echte build-hash
   if(BUILD === "dev") return; // lokaal/ongestempeld: niet checken
   try{
     var hier = new URL(location.href);
@@ -710,11 +710,11 @@ sup{font-size:.72em;line-height:0}
 </div>
 <div id="confetti"></div>
 
-<script src="content.js?v=c0896049f6"></script>
-<script src="ezels.js?v=c0896049f6"></script>
-<script src="video/manifest.js?v=c0896049f6"></script>
+<script src="content.js?v=c6332e8b56"></script>
+<script src="ezels.js?v=c6332e8b56"></script>
+<script src="video/manifest.js?v=c6332e8b56"></script>
 <!-- math.js alleen voor wiskunde-vakken (synchroon, geen 404 bij talen) -->
-<script>if(window.VAK&&window.VAK.wiskunde)document.write('<scr'+'ipt src="math.js?v=c0896049f6"><\/scr'+'ipt>');</script>
+<script>if(window.VAK&&window.VAK.wiskunde)document.write('<scr'+'ipt src="math.js?v=c6332e8b56"><\/scr'+'ipt>');</script>
 <script>
 /* =====================================================================
    App-engine — adaptief leermodel
@@ -1591,11 +1591,11 @@ function renderStapel(){
    "weet ik niet") komt aan het eind van de ronde nog een keer terug (fcFout → herhaalronde).
    Dit is de kijk-ronde: het raakt boxjes/sterren NIET — dat blijft "Overhoren".
    Begripvakken (biologie, aardrijkskunde, wiskunde, Nederlands) houden het oude kijk-gedrag. */
-const FCTYP = TAALVAK, FC_MAX_HERHAAL = 3;   // na 3 herhaalrondes stopt de stapel — niet eindeloos doorgaan
-let fcKaarten=[], fcI=0, fcFout=[], fcBeantwoord=false, fcRonde=1;
+const FCTYP = TAALVAK;
+let fcKaarten=[], fcI=0, fcFout=[], fcBeantwoord=false, fcRonde=1, fcHerkans=false, fcPoging=0;
 function startLeren(){
   const cur=stacks(huidigThema)[huidigStapel];
-  fcKaarten=shuffle(cur); fcI=0; fcFout=[]; fcRonde=1;
+  fcKaarten=shuffle(cur); fcI=0; fcFout=[]; fcRonde=1; fcHerkans=false; fcPoging=0;
   el("l-titel").textContent=BEGRIPPEN[huidigThema].titel+(FCTYP?" — kaartjes":" — kijken");
   el("l-typ").style.display=FCTYP?"block":"none";
   el("l-nav").style.display=FCTYP?"none":"flex";
@@ -1615,21 +1615,24 @@ function toonKaart(){
   el("l-hint-front").textContent="typ het "+(DOEL?DOEL+"e ":"")+"woord 👇";
   el("l-hint-back").textContent="";
   el("l-fb").className="fb"; el("l-fb").innerHTML="";
-  el("l-next").style.display="none"; el("l-weetniet-rij").style.display="block";
+  el("l-next").style.display="none";
+  // bij een herkansing geen "weet ik niet" meer — ze heeft het woord net gezien, nu zelf proberen
+  el("l-weetniet-rij").style.display = fcPoging===0 ? "block" : "none";
   const inp=el("l-input"); inp.value=""; inp.disabled=false;
   inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); fcBeantwoord?fcVolgende():checkKaart(); } };
   setTimeout(()=>inp.focus(),60);
 }
 function draai(){ if(FCTYP && !fcBeantwoord) return;   // typ-modus: geen gratis blik op het antwoord
   const f=el("flip"); f.classList.toggle("on"); if(f.classList.contains("on")) zegEN(fcKaarten[fcI][1]); }
-function fcOnthou(){ if(fcRonde>FC_MAX_HERHAAL) return;   // vangnet: niet eindeloos blijven herhalen
-  const k=fcKaarten[fcI]; if(!fcFout.some(x=>x[1]===k[1])) fcFout.push(k); }  // terug in de herhaalronde
+function fcOnthou(){ if(fcRonde>1) return;                // de eindronde is de laatste kans — daarna klaar
+  const k=fcKaarten[fcI]; if(!fcFout.some(x=>x[1]===k[1])) fcFout.push(k); }  // terug in de eindronde
 function fcOnthul(){          // kaart open, antwoord uitspreken, door-knop tonen
   fcBeantwoord=true;
   el("flip").classList.add("on"); zegEN(fcKaarten[fcI][1]);
   el("l-input").disabled=true; el("l-weetniet-rij").style.display="none";
   el("l-next").style.display="flex";
-  el("l-next").textContent = (fcI>=fcKaarten.length-1 && !fcFout.length) ? "Klaar! →" : "Volgende →";
+  el("l-next").textContent = fcHerkans ? "Probeer het nog een keer →"
+                           : (fcI>=fcKaarten.length-1 && !fcFout.length) ? "Klaar! →" : "Volgende →";
   // feedback + door-knop staan onder het kaartje: rol ze zo nodig net in beeld
   setTimeout(()=>{ try{ el("l-next").scrollIntoView({block:"nearest", behavior:"smooth"}); }catch(_){ } },120);
 }
@@ -1638,40 +1641,50 @@ function checkKaart(){
   const k=fcKaarten[fcI], inp=el("l-input"); if(inp.disabled) return;
   const r=checkAntwoord(inp.value, [k[1]].concat(altsVan(k))), fb=el("l-fb"), jij=esc(inp.value.trim());
   const juist="<b>"+esc(k[1])+"</b>";
+  const eerstePoging = fcPoging===0;               // zelfde regel als bij Overhoren (zie checkWoord)
+  const eindronde = fcRonde>1;
+  fcHerkans=false;
+  const nogEens = () => { fcHerkans=true; fcPoging=1; };
   if(r.status==="goed"){
     el("l-hint-back").textContent="✓ goed getypt!";
     fb.className="fb show ok"; fb.innerHTML="✓ "+kies(AANMOEDIGING.goed);
-  } else if(r.status==="accent"){
+  } else if(r.status==="accent" || r.status==="lid" || r.status==="spelling"){
+    let tip;
+    if(r.status==="accent") tip="📝 Bijna! Let op "+VAK.tekenLabel+": het is "+juist+".";
+    else if(r.status==="lid"){ const GTXT={m:" (mannelijk)", v:" (vrouwelijk)", o:" (onzijdig)", mv:" (meervoud)"};
+      tip="📝 Bijna! Let op het lidwoord: het is "+juist+(GTXT[genderVan(k)]||"")+"."; }
+    else tip="📝 Bijna! Let op de spelling: het is "+juist+".";
     el("l-hint-back").textContent="📝 bijna";
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op "+VAK.tekenLabel+": het is "+juist+". Die komt zo nog een keer terug.";
-    fcOnthou();
-  } else if(r.status==="lid"){
-    const GTXT={m:" (mannelijk)", v:" (vrouwelijk)", o:" (onzijdig)", mv:" (meervoud)"};
-    el("l-hint-back").textContent="📝 bijna";
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op het lidwoord: het is "+juist+(GTXT[genderVan(k)]||"")+". Die komt zo nog een keer terug.";
-    fcOnthou();
-  } else if(r.status==="spelling"){
-    el("l-hint-back").textContent="📝 bijna";
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op de spelling: het is "+juist+". Die komt zo nog een keer terug.";
-    fcOnthou();
+    fb.className="fb show ok";
+    if(eerstePoging && !eindronde){ fb.innerHTML=tip; nogEens(); }
+    else fb.innerHTML=tip+" De kern zat goed. 💛";
   } else {
     el("l-hint-back").textContent="✗ net niet";
-    fb.className="fb show no"; fb.innerHTML=(jij?"Jij typte <b>"+jij+"</b>. ":"")+"Het is "+juist+" — die komt zo nog een keer terug. 💛";
-    fcOnthou();
+    fb.className="fb show no";
+    const basis=(jij?"Jij typte <b>"+jij+"</b>. ":"")+"Het is "+juist;
+    if(eerstePoging && !eindronde){ fb.innerHTML=basis+"."; nogEens(); }
+    else if(!eindronde){ fb.innerHTML=basis+" — die komt aan het eind nog één keer. 💛"; fcOnthou(); }
+    else fb.innerHTML=basis+" — geen zorgen, bij het overhoren pak je 'm weer op. 💛";
   }
   fcOnthul();
 }
 function fcWeetNiet(){
   if(!FCTYP || fcBeantwoord) return;
+  fcHerkans=false;
   el("l-hint-back").textContent="👀 kijk goed";
   el("l-fb").className="fb show ok";
-  el("l-fb").innerHTML="Geen punt — het is <b>"+esc(fcKaarten[fcI][1])+"</b>. Die komt zo nog een keer terug. 💛";
-  fcOnthou(); fcOnthul();
+  const juist="<b>"+esc(fcKaarten[fcI][1])+"</b>";
+  if(fcPoging===0 && fcRonde===1){ el("l-fb").innerHTML="Geen punt — het is "+juist+". Typ 'm nu zelf even. 💛"; fcHerkans=true; fcPoging=1; }
+  else if(fcRonde===1){ el("l-fb").innerHTML="Geen punt — het is "+juist+" — die komt aan het eind nog één keer. 💛"; fcOnthou(); }
+  else el("l-fb").innerHTML="Geen punt — het is "+juist+". 💛";
+  fcOnthul();
 }
 function fcVolgende(){
+  if(fcHerkans){ fcHerkans=false; toonKaart(); return; }   // zelfde kaart, nieuwe poging, leeg veld
+  fcPoging=0;
   if(fcI < fcKaarten.length-1){ fcI++; toonKaart(); return; }
-  if(FCTYP && fcFout.length){                      // ronde uit, maar er staan nog kaartjes open
-    fcKaarten=shuffle(fcFout); fcFout=[]; fcI=0; fcRonde++;
+  if(FCTYP && fcFout.length && fcRonde===1){       // eindronde: de kaartjes die twee keer fout gingen
+    fcKaarten=shuffle(fcFout); fcFout=[]; fcI=0; fcRonde=2;
     toast("Nog even deze "+fcKaarten.length+" 👇"); toonKaart(); return;
   }
   if(FCTYP){ toast(kies(AANMOEDIGING.stapelklaar)+" Alle kaartjes gehad!"); confetti(); }  // wel confetti, geen sterren: dit is de oefenronde
@@ -1738,38 +1751,60 @@ function kiesMC(btn,opt){
   else { btn.classList.add("bad"); fb.className="fb show no"; fb.innerHTML="Het is <b>"+goed+"</b> = "+it.w[0]+". Probeer 'm zo zelf te typen."+ezelHTML(goed); }
   el("wt-next").style.display="flex"; el("wt-next").textContent="Nu zelf typen →";
 }
-function volgendeStap(){ const it=wq.items[0]; if(it && it.fase==="kies"){ it.fase="typ"; toonWoord(); } else volgendeWoord(); }
+function volgendeStap(){
+  const it=wq.items[0];
+  if(it && it.fase==="kies"){ it.fase="typ"; toonWoord(); return; }
+  if(it && it.herkans){ it.herkans=false; toonWoord(); return; }   // zelfde woord, nieuwe poging, leeg veld
+  volgendeWoord();
+}
 function accepteer(w){ const opts=[w[1]]; if(w[2]) opts.push(...w[2]); return opts.map(norm); }
+/* Herkansings-regel (Storm, 2026-09) — per woord hoogstens DRIE keer in één ronde:
+     1. fout          → je ziet het goede woord en typt 'm meteen nog een keer ("herkansing")
+     2. weer fout     → één keer terug aan het eind van de ronde (`laatste`)
+     3. die laatste beurt is de laatste; daarna klaar, morgen komt 'ie via de gewone herhaling terug
+   "Bijna goed" (accent/lidwoord/spelling) krijgt één herkansing en gaat daarna door: het telt dan
+   als geleerd (de kern was goed), zodat een lastig lidwoord niet eindeloos blijft rondzingen. */
 function checkWoord(){
   const it=wq.items[0], w=it.w, th=it.th, inp=el("wt-input"); if(inp.disabled) return;
   const antw=[w[1]].concat(altsVan(w));
   const r=checkAntwoord(inp.value, antw);
   inp.disabled=true; const fb=el("wt-fb"); const spk="<button class='spk' style='vertical-align:middle' onclick=\"zegEN('"+w[1].replace(/'/g,"\\'")+"')\">🔊</button>";
+  it.poging = it.poging || 0;               // 0 = eerste poging, 1 = herkansing, 2 = laatste beurt
+  it.herkans = false;
+  const eerstePoging = it.poging===0;
+  function klaar(teltAlsGeleerd){            // woord uit de rij; eventueel een box omhoog
+    if(teltAlsGeleerd){ goedWoord(th,w[1]); } else { foutWoord(th,w[1]); }
+    save(); wq.items.shift();
+  }
+  function herkansing(){ it.poging=1; it.herkans=true; }   // zelfde woord, leeg veld
+  function naarHetEind(){ foutWoord(th,w[1]); save(); it.poging=2; wq.items.push(wq.items.shift()); }
+
   if(r.status==="goed"){
     const nb=goedWoord(th,w[1]); save(); wq.items.shift();
     fb.className="fb show ok";
     fb.innerHTML = (nb>=MASTER ? "✓ "+kies(AANMOEDIGING.goed)+" <b>"+w[1]+"</b> — zit nu vast! 🥇"
                               : "✓ "+kies(AANMOEDIGING.goed)+" <b>"+w[1]+"</b>");
     S.punten++; el("punten").textContent=S.punten;
-  } else if(r.status==="accent"){
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna goed! Let op "+VAK.tekenLabel+": <b>"+w[1]+"</b> "+spk+ezelHTML(w[1]);
-    wq.items.push(wq.items.shift()); // accent telt pas als goed mét accent — geen straf, komt nog een keer
-  } else if(r.status==="lid"){
-    const GTXT={m:" (mannelijk)", v:" (vrouwelijk)", o:" (onzijdig)", mv:" (meervoud)"};
-    const g=genderVan(w), gtxt=GTXT[g]||"";
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna! Let op het lidwoord: het is <b>"+w[1]+"</b>"+gtxt+" "+spk+ezelHTML(w[1]);
-    wq.items.push(wq.items.shift()); // lidwoord/geslacht telt pas als goed mét juist lidwoord
-  } else if(r.status==="spelling"){
-    fb.className="fb show ok"; fb.innerHTML="📝 Bijna goed! Let op de spelling: <b>"+w[1]+"</b> "+spk+ezelHTML(w[1]);
-    wq.items.push(wq.items.shift());
+  } else if(r.status==="accent" || r.status==="lid" || r.status==="spelling"){
+    let tip;
+    if(r.status==="accent") tip="📝 Bijna goed! Let op "+VAK.tekenLabel+": <b>"+w[1]+"</b> ";
+    else if(r.status==="lid"){ const GTXT={m:" (mannelijk)", v:" (vrouwelijk)", o:" (onzijdig)", mv:" (meervoud)"};
+      tip="📝 Bijna! Let op het lidwoord: het is <b>"+w[1]+"</b>"+(GTXT[genderVan(w)]||"")+" "; }
+    else tip="📝 Bijna goed! Let op de spelling: <b>"+w[1]+"</b> ";
+    fb.className="fb show ok";
+    if(eerstePoging){ fb.innerHTML=tip+spk+ezelHTML(w[1]); herkansing(); }
+    else { fb.innerHTML=tip+spk+" — die kern zat goed, we pakken 'm later nog eens. 💛"+ezelHTML(w[1]); klaar(true); }
   } else {
-    foutWoord(th,w[1]); save();
-    fb.className="fb show no"; fb.innerHTML="✗ "+kies(AANMOEDIGING.bijna)+" Het is: <b>"+w[1]+"</b> "+spk+ezelHTML(w[1]);
-    wq.items.push(wq.items.shift());
+    fb.className="fb show no";
+    const juist="✗ "+kies(AANMOEDIGING.bijna)+" Het is: <b>"+w[1]+"</b> "+spk;
+    if(eerstePoging){ fb.innerHTML=juist+ezelHTML(w[1]); herkansing(); }
+    else if(it.poging===1){ fb.innerHTML=juist+" — die komt aan het eind nog één keer. 💛"+ezelHTML(w[1]); naarHetEind(); }
+    else { fb.innerHTML=juist+" — geen zorgen, morgen pakken we 'm weer op. 💛"+ezelHTML(w[1]); klaar(false); }
   }
   updateWtMeta();
   el("wt-next").style.display="flex";
-  el("wt-next").textContent = wq.items.length===0 ? "Klaar! →" : "Volgende →";
+  el("wt-next").textContent = it.herkans ? "Probeer het nog een keer →"
+                            : wq.items.length===0 ? "Klaar! →" : "Volgende →";
 }
 function slaWoordOver(){ if(wq.items.length>1){ wq.items.push(wq.items.shift()); } volgendeWoord(); }
 function woordKlaar(){
